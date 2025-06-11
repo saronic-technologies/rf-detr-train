@@ -26,14 +26,14 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from rfdetr.util import box_ops
-from rfdetr.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+from model.util import box_ops
+from model.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        accuracy, get_world_size,
                        is_dist_avail_and_initialized)
 
-from rfdetr.models.backbone import build_backbone
-from rfdetr.models.matcher import build_matcher
-from rfdetr.models.transformer import build_transformer
+from model.net.backbone import build_backbone
+from model.net.matcher import build_matcher
+from model.net.transformer import build_transformer
 
 class LWDETR(nn.Module):
     """ This is the Group DETR v3 module that performs object detection """

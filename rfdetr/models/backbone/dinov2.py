@@ -126,7 +126,7 @@ class DinoV2(nn.Module):
                 size=(height, width),
                 mode="bicubic",
                 align_corners=False,
-                antialias=True,
+                antialias=False,
             )
 
             # Reshape back

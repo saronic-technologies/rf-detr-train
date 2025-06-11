@@ -70,3 +70,67 @@ def get_param_dict(args, model_without_ddp: nn.Module):
     )
 
     return final_param_dicts
+
+
+# Modified version that's more flexible for assigning lr to different layers -cat
+def get_param_dict(args, model: nn.Module):
+    """
+    Build disjoint parameter groups with custom learning‑rates:
+
+    • Backbone (handled by Joiner.get_named_param_lr_pairs)  
+    • Transformer decoder (scaled by lr_component_decay)  
+    • “Other” layers (default lr)
+
+    Returns
+    -------
+    List[Dict] suitable for torch.optim.*
+    """
+    assert isinstance(model.backbone, Joiner), "`model.backbone` must be a Joiner"
+
+    # ── helper to mark tensors we have already assigned ──────────────────────────
+    assigned = set()                       # id(p) for fast look‑up
+    param_groups = []
+
+    # ── 1. backbone – relies on Joiner to decide per‑layer LR  ───────────────────
+    for name, param_dict in model.backbone[0].get_named_param_lr_pairs(
+            args, prefix="backbone.0").items():
+        params = param_dict["params"]
+        # make sure params is a list and de‑duplicate
+        if not isinstance(params, (list, tuple)):
+            params = [params]
+        uniq = [p for p in params if id(p) not in assigned and p.requires_grad]
+        if uniq:
+            assigned.update({id(p) for p in uniq})
+            # keep any other keys (e.g. weight_decay) returned by Joiner
+            param_groups.append({**param_dict, "params": uniq})
+
+    # ── 2. transformer decoder  ──────────────────────────────────────────────────
+    decoder_key = "transformer.decoder"
+    decoder = [
+        p for n, p in model.named_parameters()
+        if decoder_key in n and p.requires_grad and id(p) not in assigned
+    ]
+    if decoder:
+        assigned.update({id(p) for p in decoder})
+        param_groups.append({
+            "params": decoder,
+            "lr": args.lr * args.lr_component_decay,
+        })
+
+    # ── 3. everything else  ──────────────────────────────────────────────────────
+    others = [
+        p for n, p in model.named_parameters()
+        if decoder_key not in n
+           and not n.startswith("backbone.0")
+           and p.requires_grad
+           and id(p) not in assigned
+    ]
+    if others:
+        assigned.update({id(p) for p in others})
+        param_groups.append({"params": others, "lr": args.lr})
+
+    # ── sanity check (optional but handy) ────────────────────────────────────────
+    assert len({id(p) for g in param_groups for p in g["params"]}) == len(assigned), \
+        "Duplicate parameters slipped into optimizer groups!"
+
+    return param_groups
